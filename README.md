@@ -11,6 +11,7 @@ A visual family history application built with React + D3.js on the frontend and
 - **Media** — drag-and-drop photo/document upload; auto-thumbnail generation; captioning
 - **Neo4j graph database** — natural fit for family relationship traversals
 - **File storage** — local filesystem with sharp-generated thumbnails (easily swappable for S3/MinIO)
+- **MCP server** — AI assistants (Claude Desktop, etc.) can query and edit the tree via the Model Context Protocol
 
 ## Tech Stack
 
@@ -22,6 +23,7 @@ A visual family history application built with React + D3.js on the frontend and
 | Backend | Node.js, Express, TypeScript |
 | Graph database | Neo4j 5 (Community) |
 | File handling | Multer + Sharp |
+| MCP server | `@modelcontextprotocol/sdk` 1.x (stdio transport) |
 
 ## Quick Start
 
@@ -101,6 +103,63 @@ App runs on http://localhost:5173
 (p1:Person)-[:MARRIED_TO {marriageDate, divorceDate, marriagePlace, status}]-(p2:Person)
 (person:Person)-[:HAS_MEDIA]->(media:Media)
 ```
+
+## MCP Server
+
+`packages/mcp` exposes the full Taproot API as MCP tools so AI assistants can browse, edit, and reason about your family tree.
+
+### Build
+
+```bash
+npm run build:mcp          # compiles to packages/mcp/dist/index.js
+```
+
+### Tools
+
+| Tool | Description |
+|---|---|
+| `list_persons` | List all persons (optional `search` filter) |
+| `get_person` | Full profile + relationships + media |
+| `create_person` | Add a new person |
+| `update_person` | Edit any fields on a person |
+| `delete_person` | Remove a person permanently |
+| `get_family_tree` | Complete tree structure |
+| `find_relationship_path` | BFS path between two people ("grandfather", etc.) |
+| `add_parent_child` | Link parent → child |
+| `remove_parent_child` | Unlink parent → child |
+| `add_spouse` | Link two spouses (with optional marriage details) |
+| `update_spouse` | Edit marriage/divorce dates and status |
+| `remove_spouse` | Unlink spouses |
+| `list_media` | List photos/documents for a person |
+| `delete_media` | Remove a file |
+| `update_media_caption` | Edit a file's caption |
+
+### Resources
+
+| URI | Description |
+|---|---|
+| `taproot://persons` | Flat list of all persons (JSON) |
+| `taproot://tree` | Complete tree with relationship maps (JSON) |
+
+### Claude Desktop config
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+
+```json
+{
+  "mcpServers": {
+    "taproot": {
+      "command": "node",
+      "args": ["/absolute/path/to/taproot/packages/mcp/dist/index.js"],
+      "env": {
+        "TAPROOT_API_URL": "http://localhost:3001/api"
+      }
+    }
+  }
+}
+```
+
+The Taproot REST API must be running before Claude Desktop starts the MCP process.
 
 ## Environment Variables
 

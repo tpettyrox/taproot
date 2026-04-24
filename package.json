@@ -7,7 +7,8 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=packages/api\" \"npm run dev --workspace=packages/web\"",
-    "build": "npm run build --workspace=packages/api && npm run build --workspace=packages/web",
+    "build": "npm run build --workspace=packages/api && npm run build --workspace=packages/web && npm run build --workspace=packages/mcp",
+    "build:mcp": "npm run build --workspace=packages/mcp",
     "install:all": "npm install"
   },
   "devDependencies": {

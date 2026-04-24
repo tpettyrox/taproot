@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "taproot": {
+      "command": "node",
+      "args": ["/absolute/path/to/taproot/packages/mcp/dist/index.js"],
+      "env": {
+        "TAPROOT_API_URL": "http://localhost:3001/api"
+      }
+    }
+  }
+}
