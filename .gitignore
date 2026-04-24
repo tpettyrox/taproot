@@ -1,0 +1,23 @@
+node_modules/
+dist/
+.env
+*.local
+
+# Uploads (not tracked in git)
+packages/api/uploads/
+
+# Build output
+packages/web/dist/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
