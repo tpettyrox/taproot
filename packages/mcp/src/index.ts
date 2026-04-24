@@ -248,6 +248,75 @@ const TOOLS = [
       required: ['mediaId', 'caption'],
     },
   },
+
+  // ── Face recognition ──
+  {
+    name: 'list_face_suggestions',
+    description:
+      'List face-match suggestions produced when photos were uploaded. CompreFace detects faces and suggests which person in the tree they belong to. Suggestions require user confirmation before they are stored.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        personId: {
+          type: 'string',
+          description: 'Filter suggestions to a specific person UUID.',
+        },
+        status: {
+          type: 'string',
+          enum: ['pending', 'confirmed', 'rejected'],
+          description: 'Filter by status. Defaults to all statuses.',
+        },
+      },
+    },
+  },
+  {
+    name: 'confirm_face',
+    description:
+      'Confirm that a face suggestion is correct — marks the suggested person as appearing in that photo and trains CompreFace with the new example so future recognition improves.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        suggestionId: { type: 'string', description: 'FaceSuggestion UUID.' },
+        personId: {
+          type: 'string',
+          description: 'Person UUID to link this face to (usually the suggestedPersonId from the suggestion, but can differ).',
+        },
+      },
+      required: ['suggestionId', 'personId'],
+    },
+  },
+  {
+    name: 'reject_face',
+    description: 'Mark a face suggestion as incorrect. The suggestion is dismissed and will not appear again.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        suggestionId: { type: 'string', description: 'FaceSuggestion UUID to reject.' },
+      },
+      required: ['suggestionId'],
+    },
+  },
+
+  // ── Document extraction ──
+  {
+    name: 'extract_document',
+    description:
+      'Use Claude to read an uploaded document (PDF or image) and extract biographical details — names, dates, places, occupations. Returns structured JSON with one entry per person found. The caller should review the result and apply fields to person records using update_person or create_person.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        mediaId: {
+          type: 'string',
+          description: 'Media UUID of the document or image to analyse.',
+        },
+        pollTimeoutMs: {
+          type: 'number',
+          description: 'Max milliseconds to wait for the extraction job. Defaults to 60000 (60s).',
+        },
+      },
+      required: ['mediaId'],
+    },
+  },
 ] as const;
 
 // ── Relationship path finder ──────────────────────────────────────────────────
@@ -458,6 +527,55 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const { mediaId, caption } = args as { mediaId: string; caption: string };
         await http.patch(`/media/${mediaId}/caption`, { caption });
         return ok(`Caption updated on media ${mediaId}`);
+      }
+
+      // ── Face recognition ──────────────────────────────────────────────────
+      case 'list_face_suggestions': {
+        const { personId, status } = args as { personId?: string; status?: string };
+        const params: Record<string, string> = {};
+        if (personId) params.personId = personId;
+        if (status) params.status = status;
+        const { data } = await http.get('/faces/suggestions', { params });
+        return ok(data);
+      }
+
+      case 'confirm_face': {
+        const { suggestionId, personId } = args as { suggestionId: string; personId: string };
+        await http.post(`/faces/${suggestionId}/confirm`, { personId });
+        return ok(`Face suggestion ${suggestionId} confirmed and linked to person ${personId}.`);
+      }
+
+      case 'reject_face': {
+        const { suggestionId } = args as { suggestionId: string };
+        await http.post(`/faces/${suggestionId}/reject`);
+        return ok(`Face suggestion ${suggestionId} rejected.`);
+      }
+
+      // ── Document extraction ───────────────────────────────────────────────
+      case 'extract_document': {
+        const { mediaId, pollTimeoutMs = 60_000 } = args as {
+          mediaId: string;
+          pollTimeoutMs?: number;
+        };
+
+        const { data: created } = await http.post(`/extraction/${mediaId}`);
+        const { jobId } = created as { jobId: string };
+
+        const deadline = Date.now() + (pollTimeoutMs as number);
+        let job: { status: string; result?: unknown; error?: string } = { status: 'pending' };
+
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const { data } = await http.get(`/extraction/${jobId}`);
+          job = data as typeof job;
+          if (job.status === 'done' || job.status === 'failed') break;
+        }
+
+        if (job.status === 'done') return ok(job.result);
+        if (job.status === 'failed') {
+          throw new McpError(ErrorCode.InternalError, `Extraction failed: ${job.error}`);
+        }
+        throw new McpError(ErrorCode.InternalError, 'Extraction timed out — poll /api/extraction/:jobId manually.');
       }
 
       default:

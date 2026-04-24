@@ -4,10 +4,13 @@ dotenv.config();
 import express from 'express';
 import cors from 'cors';
 import { initSchema, closeDriver } from './db/neo4j';
+import { ensureBucket } from './services/storageService';
 import personsRouter from './routes/persons';
 import relationshipsRouter from './routes/relationships';
 import mediaRouter from './routes/media';
 import treeRouter from './routes/tree';
+import facesRouter from './routes/faces';
+import extractionRouter from './routes/extraction';
 
 const app = express();
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
@@ -20,12 +23,15 @@ app.use('/api/persons', personsRouter);
 app.use('/api/relationships', relationshipsRouter);
 app.use('/api/media', mediaRouter);
 app.use('/api/tree', treeRouter);
+app.use('/api/faces', facesRouter);
+app.use('/api/extraction', extractionRouter);
 
 app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
 async function start(): Promise<void> {
   try {
     await initSchema();
+    await ensureBucket();
     app.listen(PORT, () => {
       console.log(`Taproot API running on http://localhost:${PORT}`);
     });

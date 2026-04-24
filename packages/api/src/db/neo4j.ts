@@ -30,7 +30,11 @@ export async function initSchema(): Promise<void> {
   try {
     await session.run('CREATE CONSTRAINT person_id IF NOT EXISTS FOR (p:Person) REQUIRE p.id IS UNIQUE');
     await session.run('CREATE CONSTRAINT media_id IF NOT EXISTS FOR (m:Media) REQUIRE m.id IS UNIQUE');
+    await session.run('CREATE CONSTRAINT face_suggestion_id IF NOT EXISTS FOR (s:FaceSuggestion) REQUIRE s.id IS UNIQUE');
+    await session.run('CREATE CONSTRAINT extraction_job_id IF NOT EXISTS FOR (e:ExtractionJob) REQUIRE e.id IS UNIQUE');
     await session.run('CREATE INDEX person_name IF NOT EXISTS FOR (p:Person) ON (p.lastName, p.firstName)');
+    await session.run('CREATE INDEX face_suggestion_media IF NOT EXISTS FOR (s:FaceSuggestion) ON (s.mediaId)');
+    await session.run('CREATE INDEX face_suggestion_status IF NOT EXISTS FOR (s:FaceSuggestion) ON (s.status)');
     console.log('Neo4j schema initialized');
   } finally {
     await session.close();

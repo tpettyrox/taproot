@@ -1,26 +1,8 @@
-import path from 'path';
-import fs from 'fs';
 import sharp from 'sharp';
 import { v4 as uuidv4 } from 'uuid';
 import { getSession } from '../db/neo4j';
+import * as storage from './storageService';
 import { MediaRecord, MediaType } from '../types';
-
-const UPLOADS_DIR = process.env.UPLOADS_DIR ?? './uploads';
-const THUMB_DIR = path.join(UPLOADS_DIR, 'thumbnails');
-
-function ensureDirs(): void {
-  [UPLOADS_DIR, THUMB_DIR].forEach((d) => {
-    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
-  });
-}
-
-export function getFilePath(filename: string): string {
-  return path.resolve(UPLOADS_DIR, filename);
-}
-
-export function getThumbnailPath(filename: string): string {
-  return path.resolve(THUMB_DIR, filename);
-}
 
 export async function saveMedia(
   personId: string,
@@ -29,19 +11,19 @@ export async function saveMedia(
   caption?: string,
   date?: string
 ): Promise<MediaRecord> {
-  ensureDirs();
   const id = uuidv4();
-  const ext = path.extname(file.originalname).toLowerCase();
-  const filename = `${id}${ext}`;
-  const destPath = path.join(UPLOADS_DIR, filename);
+  const ext = storage.extFromMime(file.mimetype) ||
+    (file.originalname.includes('.') ? `.${file.originalname.split('.').pop()}` : '.bin');
+  const key = storage.mediaKey(id, ext);
 
-  fs.renameSync(file.path, destPath);
+  await storage.uploadFile(key, file.buffer, file.mimetype);
 
-  if (type === 'photo' && /\.(jpe?g|png|webp|gif|tiff?)$/i.test(ext)) {
-    await sharp(destPath)
+  if (type === 'photo' && /image\/(jpe?g|png|webp|gif)/i.test(file.mimetype)) {
+    const thumb = await sharp(file.buffer)
       .resize(400, 400, { fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 80 })
-      .toFile(path.join(THUMB_DIR, `${id}.jpg`));
+      .toBuffer();
+    await storage.uploadFile(storage.thumbKey(id), thumb, 'image/jpeg');
   }
 
   const session = getSession();
@@ -51,7 +33,7 @@ export async function saveMedia(
       `MATCH (p:Person {id: $personId})
        CREATE (m:Media {
          id: $id,
-         filename: $filename,
+         storageKey: $key,
          originalName: $originalName,
          mimeType: $mimeType,
          size: $size,
@@ -60,12 +42,9 @@ export async function saveMedia(
          date: $date,
          uploadedAt: $now
        })
-       CREATE (p)-[:HAS_MEDIA]->(m)
-       RETURN m`,
+       CREATE (p)-[:HAS_MEDIA]->(m)`,
       {
-        personId,
-        id,
-        filename,
+        personId, id, key,
         originalName: file.originalname,
         mimeType: file.mimetype,
         size: file.size,
@@ -75,21 +54,21 @@ export async function saveMedia(
         now,
       }
     );
-
-    return {
-      id,
-      filename,
-      originalName: file.originalname,
-      mimeType: file.mimetype,
-      size: file.size,
-      type,
-      caption,
-      date,
-      uploadedAt: now,
-    };
   } finally {
     await session.close();
   }
+
+  return {
+    id,
+    storageKey: key,
+    originalName: file.originalname,
+    mimeType: file.mimetype,
+    size: file.size,
+    type,
+    caption,
+    date,
+    uploadedAt: now,
+  };
 }
 
 export async function getMediaRecord(id: string): Promise<MediaRecord | null> {
@@ -100,7 +79,7 @@ export async function getMediaRecord(id: string): Promise<MediaRecord | null> {
     const p = result.records[0].get('m').properties as Record<string, unknown>;
     return {
       id: p.id as string,
-      filename: p.filename as string,
+      storageKey: p.storageKey as string,
       originalName: p.originalName as string,
       mimeType: p.mimeType as string,
       size: p.size as number,
@@ -115,31 +94,25 @@ export async function getMediaRecord(id: string): Promise<MediaRecord | null> {
 }
 
 export async function deleteMedia(id: string): Promise<boolean> {
+  const record = await getMediaRecord(id);
+  if (!record) return false;
+
+  await storage.deleteFile(record.storageKey);
+
+  const ext = record.storageKey.split('.').pop() ?? '';
+  const base = id;
+  // Delete thumbnail if it exists (only for photos)
+  if (record.type === 'photo') {
+    await storage.deleteFile(storage.thumbKey(base));
+  }
+
   const session = getSession();
   try {
-    const result = await session.run(
-      'MATCH (m:Media {id: $id}) RETURN m.filename AS filename',
-      { id }
-    );
-    if (result.records.length === 0) return false;
-
-    const filename = result.records[0].get('filename') as string;
-    const ext = path.extname(filename);
-    const base = path.basename(filename, ext);
-
-    const filesToRemove = [
-      path.join(UPLOADS_DIR, filename),
-      path.join(THUMB_DIR, `${base}.jpg`),
-    ];
-    filesToRemove.forEach((f) => {
-      if (fs.existsSync(f)) fs.unlinkSync(f);
-    });
-
     await session.run('MATCH (m:Media {id: $id}) DETACH DELETE m', { id });
-    return true;
   } finally {
     await session.close();
   }
+  return true;
 }
 
 export async function updateMediaCaption(id: string, caption: string): Promise<void> {

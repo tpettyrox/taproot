@@ -38,7 +38,7 @@ export interface SpouseRef extends PersonRef {
 
 export interface MediaRecord {
   id: string;
-  filename: string;
+  storageKey: string;
   originalName: string;
   mimeType: string;
   size: number;
@@ -102,4 +102,57 @@ export interface CreatePersonInput {
   deathPlace?: string;
   occupation?: string;
   bio?: string;
+}
+
+// ── Face recognition ─────────────────────────────────────────────────────────
+
+export interface BoundingBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export type FaceSuggestionStatus = 'pending' | 'confirmed' | 'rejected';
+
+export interface FaceSuggestion {
+  id: string;
+  mediaId: string;
+  compreFaceImageId: string;
+  boundingBox: BoundingBox;
+  suggestedPersonId: string;
+  suggestedPersonName: string;
+  confidence: number;
+  status: FaceSuggestionStatus;
+  createdAt: string;
+}
+
+// ── Document extraction ───────────────────────────────────────────────────────
+
+export interface ExtractedPerson {
+  name?: string;
+  birthDate?: string;
+  birthPlace?: string;
+  deathDate?: string;
+  deathPlace?: string;
+  occupation?: string;
+  bio?: string;
+}
+
+export interface ExtractionResult {
+  persons: ExtractedPerson[];
+  confidence: 'high' | 'medium' | 'low';
+  notes?: string;
+}
+
+export type ExtractionJobStatus = 'pending' | 'processing' | 'done' | 'failed';
+
+export interface ExtractionJob {
+  id: string;
+  mediaId: string;
+  status: ExtractionJobStatus;
+  result?: ExtractionResult;
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
 }

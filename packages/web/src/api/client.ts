@@ -5,6 +5,8 @@ import type {
   TreeData,
   CreatePersonInput,
   MediaRecord,
+  FaceSuggestion,
+  ExtractionJob,
 } from '../types';
 
 const api = axios.create({ baseURL: '/api' });
@@ -67,3 +69,22 @@ export const updateCaption = (id: string, caption: string) =>
 
 export const mediaUrl = (id: string) => `/api/media/${id}`;
 export const thumbnailUrl = (id: string) => `/api/media/${id}/thumbnail`;
+
+// Face recognition
+export const getFaceSuggestions = (personId: string, status = 'pending') =>
+  api
+    .get<FaceSuggestion[]>('/faces/suggestions', { params: { personId, status } })
+    .then((r) => r.data);
+
+export const confirmFace = (suggestionId: string, personId: string) =>
+  api.post(`/faces/${suggestionId}/confirm`, { personId });
+
+export const rejectFace = (suggestionId: string) =>
+  api.post(`/faces/${suggestionId}/reject`);
+
+// Document extraction
+export const triggerExtraction = (mediaId: string) =>
+  api.post<{ jobId: string; status: string }>(`/extraction/${mediaId}`).then((r) => r.data);
+
+export const pollExtractionJob = (jobId: string) =>
+  api.get<ExtractionJob>(`/extraction/${jobId}`).then((r) => r.data);

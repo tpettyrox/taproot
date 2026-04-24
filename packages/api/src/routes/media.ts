@@ -1,25 +1,13 @@
-import path from 'path';
-import fs from 'fs';
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import * as mediaService from '../services/mediaService';
+import * as storage from '../services/storageService';
+import { enqueueFaceDetection } from '../jobs/faceQueue';
 
-const UPLOADS_DIR = process.env.UPLOADS_DIR ?? './uploads';
 const MAX_FILE_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB ?? '50', 10);
 
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-    cb(null, UPLOADS_DIR);
-  },
-  filename: (_req, file, cb) => {
-    const unique = `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    cb(null, unique + path.extname(file.originalname));
-  },
-});
-
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: MAX_FILE_SIZE_MB * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowed = /\.(jpe?g|png|webp|gif|pdf|doc[x]?|xls[x]?|txt)$/i;
@@ -42,13 +30,12 @@ router.post('/upload/:personId', upload.single('file'), async (req: Request, res
       date?: string;
     };
     const mediaType = type === 'document' ? 'document' : 'photo';
-    const record = await mediaService.saveMedia(
-      req.params.personId,
-      req.file,
-      mediaType,
-      caption,
-      date
-    );
+    const record = await mediaService.saveMedia(req.params.personId, req.file, mediaType, caption, date);
+
+    if (mediaType === 'photo') {
+      enqueueFaceDetection(record.id);
+    }
+
     res.status(201).json(record);
   } catch (err) {
     res.status(500).json({ error: String(err) });
@@ -59,11 +46,10 @@ router.get('/:id', async (req: Request, res: Response) => {
   try {
     const record = await mediaService.getMediaRecord(req.params.id);
     if (!record) return res.status(404).json({ error: 'Media not found' });
-    const filePath = mediaService.getFilePath(record.filename);
-    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+    const stream = await storage.getReadStream(record.storageKey);
     res.setHeader('Content-Type', record.mimeType);
     res.setHeader('Cache-Control', 'public, max-age=86400');
-    fs.createReadStream(filePath).pipe(res);
+    stream.pipe(res);
   } catch (err) {
     res.status(500).json({ error: String(err) });
   }
@@ -74,19 +60,16 @@ router.get('/:id/thumbnail', async (req: Request, res: Response) => {
     const record = await mediaService.getMediaRecord(req.params.id);
     if (!record) return res.status(404).json({ error: 'Media not found' });
 
-    const ext = path.extname(record.filename);
-    const base = path.basename(record.filename, ext);
-    const thumbPath = mediaService.getThumbnailPath(`${base}.jpg`);
-
-    if (fs.existsSync(thumbPath)) {
+    try {
+      const stream = await storage.getReadStream(storage.thumbKey(req.params.id));
       res.setHeader('Content-Type', 'image/jpeg');
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      fs.createReadStream(thumbPath).pipe(res);
-    } else {
-      const filePath = mediaService.getFilePath(record.filename);
-      if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'File not found' });
+      stream.pipe(res);
+    } catch {
+      // No thumbnail — fall back to original
+      const stream = await storage.getReadStream(record.storageKey);
       res.setHeader('Content-Type', record.mimeType);
-      fs.createReadStream(filePath).pipe(res);
+      stream.pipe(res);
     }
   } catch (err) {
     res.status(500).json({ error: String(err) });

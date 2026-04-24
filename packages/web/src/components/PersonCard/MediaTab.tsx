@@ -2,9 +2,27 @@ import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { uploadMedia, deleteMedia, updateCaption, mediaUrl, thumbnailUrl } from '../../api/client';
 import type { PersonWithRelations, MediaRecord } from '../../types';
+import FaceSuggestionPanel from './FaceSuggestionPanel';
+import ExtractionModal from './ExtractionModal';
 
 interface Props {
   person: PersonWithRelations;
+}
+
+function ExtractButton({ mediaId }: { mediaId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(true); }}
+        className="bg-white/90 rounded-lg p-1.5 text-bark-600 hover:text-bark-800 shadow text-xs font-medium"
+        title="Extract data with AI"
+      >
+        ✨
+      </button>
+      {open && <ExtractionModal mediaId={mediaId} onClose={() => setOpen(false)} />}
+    </>
+  );
 }
 
 function MediaCard({ media, personId }: { media: MediaRecord; personId: string }) {
@@ -58,6 +76,9 @@ function MediaCard({ media, personId }: { media: MediaRecord; personId: string }
 
       {/* Overlay actions */}
       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition flex gap-1">
+        {media.type === 'document' && (
+          <ExtractButton mediaId={media.id} />
+        )}
         <button
           onClick={() => setEditCaption(true)}
           className="bg-white/90 rounded-lg p-1.5 text-gray-600 hover:text-bark-600 shadow text-xs"
@@ -129,6 +150,10 @@ export default function MediaTab({ person }: Props) {
   const documents = person.media.filter((m) => m.type === 'document');
 
   return (
+    <div className="space-y-0">
+      {/* Face match suggestions (polls for pending suggestions) */}
+      <FaceSuggestionPanel personId={person.id} />
+
     <div className="p-6 space-y-6">
       {/* Upload area */}
       <div
@@ -213,6 +238,7 @@ export default function MediaTab({ person }: Props) {
       {person.media.length === 0 && (
         <p className="text-sm text-gray-400 text-center py-4">No files attached yet</p>
       )}
+    </div>
     </div>
   );
 }
